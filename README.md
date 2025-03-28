@@ -57,4 +57,4 @@ npm start
 
 ## How It Works
 
-topollama connects to the Ollama API endpoint at `http://localhost:11434/api/ps` to retrieve information about all running Ollama processes. It stores the last 100 data points to provide a historical view of CPU and memory usage over time.q
+topollama connects to the Ollama API endpoint at `http://localhost:11434/api/ps` to retrieve information about all running Ollama processes. It stores the last 100 data points to provide a historical view of CPU and memory usage over time.
