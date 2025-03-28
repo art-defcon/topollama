@@ -1,0 +1,29 @@
+{
+  "name": "topollama",
+  "version": "0.1.0",
+  "description": "Terminal based monitoring dashboard for Ollama",
+  "main": "src/index.js",
+  "bin": {
+    "topollama": "./src/index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "keywords": [
+    "ollama",
+    "monitoring",
+    "dashboard",
+    "terminal",
+    "ui"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "blessed": "^0.1.81",
+    "blessed-contrib": "^4.11.0",
+    "axios": "^1.6.2",
+    "moment": "^2.29.4",
+    "systeminformation": "^5.21.7"
+  }
+}
