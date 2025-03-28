@@ -2,6 +2,8 @@
 
 A terminal-based monitoring dashboard for Ollama, inspired by gtop. This tool provides a real-time view of your running Ollama models with historical data visualization.
 
+![Topollama Screenshot](https://github.com/art-defcon/topollama/blob/main/public/screenshot.png)
+
 ## Features
 
 - List of running Ollama models with details
