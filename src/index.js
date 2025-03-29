@@ -85,11 +85,8 @@ const memoryHistoryData = {
   }
 };
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import ollama from 'ollama';
 import os from 'os';
-
-const execPromise = promisify(exec);
 
 // Helper functions
 async function getSystemInfo() {
@@ -156,27 +153,14 @@ async function getCpuUsage() {
 // Function to get running Ollama models
 async function getRunningModels() {
   try {
-    const { stdout } = await execPromise('ollama ps');
-    const lines = stdout.trim().split('\n');
-    
-    // Skip header row and parse the rest
-    const models = [];
-    if (lines.length > 1) {
-      for (let i = 1; i < lines.length; i++) {
-        // Split by whitespace but preserve quoted strings
-        const columns = lines[i].trim().split(/\s+/);
-        if (columns.length >= 4) {
-          models.push({
-            name: columns[0],
-            id: columns[1],
-            mem: columns[2]+' '+columns[3],
-            gpu: columns[4]+' '+columns[5],
-            util: columns[6]+' '+columns[7]+' '+columns[8],
-          });
-        }
-      }
-    }
-    return models;
+    const response = await ollama.list();
+    return response.models.map(model => ({
+      name: model.name,
+      id: model.digest.substring(0, 12),
+      mem: formatSize(model.size),
+      gpu: 'N/A', // GPU info not available in basic ollama package
+      util: 'N/A'  // Utilization info not available in basic ollama package
+    }));
   } catch (error) {
     console.error(`Error getting running models: ${error.message}`);
     return [];

@@ -60,8 +60,8 @@ npm start
 - **blessed**: For creating the terminal-based UI. ([source](https://github.com/chjj/blessed))
 - **blessed-contrib**: For adding interactive components like tables and charts. ([source](https://github.com/Yomguithereal/blessed-contrib))
 - **moment**: For handling date and time formatting. ([source](https://github.com/moment/moment))
-- [moment](https://github.com/moment/moment)
+- **ollama-js**: Official JavaScript client for Ollama. ([source](https://github.com/ollama/ollama-js))
 
 ## How It Works
 
-topollama connects to the Ollama API endpoint at `http://localhost:11434/api/ps` to retrieve information about all running Ollama processes. It stores the last 100 data points to provide a historical view of CPU and memory usage over time.
+topollama uses the official Ollama JavaScript client (ollama-js) to retrieve information about all running Ollama models. It stores the last 100 data points to provide a historical view of CPU and memory usage over time.
