@@ -26,7 +26,7 @@ const runningModelsList = grid.set(0, 0, 7, 12, contrib.table, {
   interactive: true,
   label: 'Running Models',
   columnSpacing: 2,
-  columnWidth: [20, 15, 15, 15, 15]
+  columnWidth: [20, 15, 15, 15, 15, 15]
 });
 
 const cpuChart = grid.set(7, 0, 5, 6, contrib.line, {
@@ -151,16 +151,43 @@ async function getCpuUsage() {
 }
 
 // Function to get running Ollama models
+async function getProcessInfo() {
+  try {
+    const { exec } = await import('child_process');
+    return new Promise((resolve) => {
+      exec('ps aux | grep ollama', (error, stdout) => {
+        if (error) return resolve([]);
+        const processes = stdout.toString().split('\n')
+          .filter(line => line.includes('ollama serve') || line.includes('ollama run'));
+        resolve(processes);
+      });
+    });
+  } catch (error) {
+    console.error(`Error getting process info: ${error.message}`);
+    return [];
+  }
+}
+
 async function getRunningModels() {
   try {
-    const response = await ollama.list();
-    return response.models.map(model => ({
-      name: model.name,
-      id: model.digest.substring(0, 12),
-      mem: formatSize(model.size),
-      gpu: 'N/A', // GPU info not available in basic ollama package
-      util: 'N/A'  // Utilization info not available in basic ollama package
-    }));
+    const [response, processes] = await Promise.all([
+      ollama.list(),
+      getProcessInfo()
+    ]);
+    return response.models.map(model => {
+      const isRunning = processes.some(p => p.includes(model.name));
+      const usedMem = isRunning ? Math.floor(model.size * 0.7) : 0; // Estimate 70% of size when running
+      
+      return {
+        name: model.name,
+        id: model.digest.substring(0, 12),
+        size: formatSize(model.size),
+        used: formatSize(usedMem),
+        gpu: 'N/A',
+        util: 'N/A',
+        isRunning
+      };
+    });
   } catch (error) {
     console.error(`Error getting running models: ${error.message}`);
     return [];
@@ -173,9 +200,10 @@ async function updateModelsList() {
   try {
     const models = await getRunningModels();
     const data = models.map(model => [
-      model.name,
+      model.isRunning ? `{red-fg}${model.name}{/red-fg}` : model.name,
       model.id,
-      model.mem,
+      model.size,
+      model.used,
       model.gpu,
       model.util
     ]);
@@ -191,7 +219,7 @@ async function updateModelsList() {
     // data.push(['Memory', `${systemInfo.memory ? formatSize(systemInfo.memory * 1024 * 1024) : 'N/A'}`, '', '']);
     
     runningModelsList.setData({
-      headers: ['Model', 'ID', 'MEM', 'CPU', 'Util'],
+      headers: ['Model', 'ID', 'SIZE', 'Used', 'CPU', 'Util'],
       data: data
     });
   } catch (error) {
@@ -231,7 +259,7 @@ async function updateHistoryCharts() {
 }
 
 function formatSize(bytes) {
-  if (!bytes) return '-';
+  if (bytes === null || bytes === undefined || isNaN(bytes)) return '-';
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   if (bytes === 0) return '0 B';
   const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)), 10);
