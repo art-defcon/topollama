@@ -24,9 +24,9 @@ const runningModelsList = grid.set(0, 0, 7, 12, contrib.table, {
   selectedFg: 'white',
   selectedBg: 'blue',
   interactive: true,
-  label: 'Running Models',
-  columnSpacing: 2,
-  columnWidth: [20, 15, 15, 15, 15, 15]
+  label: 'Installed Models',
+  columnSpacing: 3,
+  columnWidth: [30, 14, 10, 10, 10, 10]
 });
 
 const cpuChart = grid.set(7, 0, 5, 6, contrib.line, {
@@ -179,7 +179,7 @@ async function getRunningModels() {
       const usedMem = isRunning ? Math.floor(model.size * 0.7) : 0; // Estimate 70% of size when running
       
       return {
-        name: model.name,
+        name: model.name.substring(0, 28),
         id: model.digest.substring(0, 12),
         size: formatSize(model.size),
         used: formatSize(usedMem),
@@ -200,7 +200,7 @@ async function updateModelsList() {
   try {
     const models = await getRunningModels();
     const data = models.map(model => [
-      model.isRunning ? `{red-fg}${model.name}{/red-fg}` : model.name,
+      model.name,
       model.id,
       model.size,
       model.used,
@@ -209,18 +209,13 @@ async function updateModelsList() {
     ]);
 
     if (data.length === 0) {
-      data.push(['No models running', '', '', '']);
+      data.push(['No models running', '', '', '', '', '']);
     }
-    
-    // Add system info at bottom of models list
-    // const systemInfo = await getSystemInfo();
-    // data.push(['----------------------', '', '', '']);
-    // data.push(['CPU', `${systemInfo.cpu ? systemInfo.cpu.toFixed(1) + '%' : 'N/A'}`, '', '']);
-    // data.push(['Memory', `${systemInfo.memory ? formatSize(systemInfo.memory * 1024 * 1024) : 'N/A'}`, '', '']);
     
     runningModelsList.setData({
       headers: ['Model', 'ID', 'SIZE', 'Used', 'CPU', 'Util'],
-      data: data
+      data: data,
+      align: ['left', 'right', 'left', 'left', 'left', 'left']
     });
   } catch (error) {
     console.error(`Error updating models list: ${error.message}`);
