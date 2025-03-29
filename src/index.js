@@ -2,7 +2,6 @@
 
 import blessed from 'blessed';
 import contrib from 'blessed-contrib';
-import axios from 'axios';
 import moment from 'moment';
 
 // Create a screen object
