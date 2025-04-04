@@ -20,13 +20,12 @@ const grid = new contrib.grid({
   screen: screen
 });
 
-// --- WIDGETS ---
-
-// Log widget
-const log = grid.set(11, 0, 1, 12, contrib.log, {
-  fg: 'green',
-  selectedFg: 'green',
-  label: 'Events & Logs'
+// Create a hidden log widget for internal logging (not visible in UI)
+const log = blessed.log({
+  parent: screen,
+  hidden: true, // Make it completely hidden
+  width: 0,
+  height: 0
 });
 
 // Running Models Table
@@ -43,7 +42,7 @@ const runningModelsList = grid.set(0, 0, 7, 12, contrib.table, {
 });
 
 // CPU & GPU History Chart
-const cpuChart = grid.set(7, 0, 4, 6, contrib.line, {
+const cpuChart = grid.set(7, 0, 5, 6, contrib.line, { // Increased height from 4 to 5
   style: { text: 'green', baseline: 'black' },
   xLabelPadding: 3,
   xPadding: 5,
@@ -56,7 +55,7 @@ const cpuChart = grid.set(7, 0, 4, 6, contrib.line, {
 });
 
 // Memory History Chart
-const memoryChart = grid.set(7, 6, 4, 6, contrib.line, {
+const memoryChart = grid.set(7, 6, 5, 6, contrib.line, { // Increased height from 4 to 5
   style: { line: 'yellow', text: 'green', baseline: 'black' },
   xLabelPadding: 3,
   xPadding: 5,
@@ -160,7 +159,7 @@ async function getSystemInfo() {
       gpu: gpuUsagePercent
     };
   } catch (error) {
-    log.log(`Sys Info Err: ${error.message}`);
+    console.error(`Sys Info Err: ${error.message}`);
     return { cpu: 0, memory: 0, gpu: 0 };
   }
 }
@@ -174,13 +173,13 @@ async function getOllamaPsInfo() {
       // Handle errors
       if (error) {
         if (stderr && stderr.toLowerCase().includes("could not connect")) {
-          log.log("Ollama server not running?");
+          console.error("Ollama server not running?");
         } else if (stderr && (stderr.toLowerCase().includes("no models running") || stdout.trim() === '')) {
-          log.log("No models currently running.");
+          console.error("No models currently running.");
         } else if (error.signal === 'SIGTERM' || error.code === null) {
-          log.log("'ollama ps' timed out.");
+          console.error("'ollama ps' timed out.");
         } else {
-          log.log(`ollama ps err: ${error.message.split('\n')[0]}`);
+          console.error(`ollama ps err: ${error.message.split('\n')[0]}`);
         }
         resolve(modelData);
         return;
@@ -194,12 +193,11 @@ async function getOllamaPsInfo() {
       }
       
       // Check for exact header format: NAME ID SIZE PROCESSOR UNTIL
-
       const headerLine = lines[0];
       if (!headerLine.includes('NAME') || !headerLine.includes('ID') || 
           !headerLine.includes('SIZE') || !headerLine.includes('PROCESSOR') || 
           !headerLine.includes('UNTIL')) {
-        log.log(`Unexpected 'ollama ps' header format: "${headerLine}"`);
+        console.error(`Unexpected 'ollama ps' header format: "${headerLine}"`);
         resolve(modelData);
         return;
       }
@@ -207,7 +205,7 @@ async function getOllamaPsInfo() {
       // Find column positions
       const namePos = headerLine.indexOf('NAME');
       const idPos = headerLine.indexOf('ID');
-      const memPos = headerLine.indexOf('SIZE');
+      const sizePos = headerLine.indexOf('SIZE');
       const processorPos = headerLine.indexOf('PROCESSOR');
       const untilPos = headerLine.indexOf('UNTIL');
       
@@ -219,7 +217,7 @@ async function getOllamaPsInfo() {
         try {
           // Extract fields based on column positions
           const name = line.substring(namePos, idPos).trim();
-          const mem = line.substring(memPos, processorPos).trim();
+          const size = line.substring(sizePos, processorPos).trim();
           const processor = line.substring(processorPos, untilPos).trim();
           
           // Parse processor info to get CPU/GPU usage
@@ -238,13 +236,13 @@ async function getOllamaPsInfo() {
           
           if (name) {
             modelData[name] = {
-              committedMem: mem, // Store committed memory
+              committedMem: size, // Store committed memory
               cpu: cpuUsage,
               gpu: gpuUsage
             };
           }
         } catch (parseError) {
-          log.log(`Error parsing line ${i}: ${parseError.message}`);
+          console.error(`Error parsing line ${i}: ${parseError.message}`);
         }
       }
       
@@ -258,9 +256,9 @@ async function getRunningModels() {
   try {
     const [listResponse, psInfo] = await Promise.all([
       ollama.list().catch(err => {
-        log.log(`ollama list err: ${err.message.split('\n')[0]}`);
+        console.error(`ollama list err: ${err.message.split('\n')[0]}`);
         if (err.message.toLowerCase().includes('connection refused')) {
-          log.log("Is the Ollama server running?");
+          console.error("Is the Ollama server running?");
         }
         return { models: [] };
       }),
@@ -268,7 +266,7 @@ async function getRunningModels() {
     ]);
 
     if (!listResponse || !Array.isArray(listResponse.models)) {
-      log.log("Could not retrieve model list from Ollama API.");
+      console.error("Could not retrieve model list from Ollama API.");
       return [];
     }
 
@@ -280,14 +278,14 @@ async function getRunningModels() {
         id: model.digest.substring(0, 12),
         diskSize: formatSize(model.size), // Model size on disk from ollama list
         // If running, use committed memory from ollama ps as MEM, otherwise 0 B
-        usedMem: runningData ? runningData.committedMem : '0 B', // formatSize(model.size)
+        usedMem: runningData ? runningData.committedMem : '0 B',
         cpu: runningData ? runningData.cpu : '0%',
         gpu: runningData ? runningData.gpu : '0%',
         isRunning: !!runningData
       };
     });
   } catch (error) {
-    log.log(`Get models err: ${error.message.split('\n')[0]}`);
+    console.error(`Get models err: ${error.message.split('\n')[0]}`);
     return [];
   }
 }
@@ -345,7 +343,7 @@ async function updateHistoryCharts() {
     memoryChart.setData([memoryHistoryData]);
 
   } catch (error) {
-    log.log(`Chart update err: ${error.message.split('\n')[0]}`);
+    console.error(`Chart update err: ${error.message.split('\n')[0]}`);
   }
 }
 
@@ -359,7 +357,7 @@ async function updateAll() {
     ]);
     screen.render();
   } catch (error) {
-    log.log(`UpdateAll Err: ${error.message.split('\n')[0]}`);
+    console.error(`UpdateAll Err: ${error.message.split('\n')[0]}`);
     screen.render();
   }
 }
@@ -374,11 +372,11 @@ screen.key(['escape', 'q', 'C-c'], () => {
 });
 
 screen.key(['r'], () => {
-  log.log('Manual refresh triggered...');
+  console.log('Manual refresh triggered...');
   updateAll();
 });
 
-log.log('topollama starting... Press q to quit, r to refresh.');
+console.log('topollama starting... Press q to quit, r to refresh.');
 updateAll();
 const updateInterval = setInterval(updateAll, 2000);
 
@@ -386,12 +384,11 @@ screen.on('resize', () => {
   runningModelsList.emit('attach');
   cpuChart.emit('attach');
   memoryChart.emit('attach');
-  log.emit('attach');
   screen.render();
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  log.log(`Unhandled Rejection at:', ${promise}, 'reason:', ${reason}`);
+  console.error(`Unhandled Rejection at:', ${promise}, 'reason:', ${reason}`);
 });
 
 screen.render();
