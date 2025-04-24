@@ -22,9 +22,6 @@ A terminal-based monitoring dashboard for Ollama, inspired by gtop. This tool pr
 ### Global Installation
 
 ```bash
-# Install from npm (once published)
-npm install -g topollama
-
 # Or install locally from the source
 git clone https://github.com/yourusername/topollama.git
 cd topollama

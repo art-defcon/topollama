@@ -24,6 +24,7 @@
     "blessed-contrib": "^4.11.0",
     "moment": "^2.29.4",
     "ollama": "^0.4.6",
+    "osx-extra": "^1.0.3",
     "systeminformation": "^5.21.7"
   }
 }

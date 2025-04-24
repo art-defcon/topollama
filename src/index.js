@@ -6,6 +6,7 @@ import moment from 'moment';
 import ollama from 'ollama';
 import os from 'os';
 import { exec } from 'child_process';
+import osX from 'osx-extra'; // Import osx-extra
 
 // Create a screen object
 const screen = blessed.screen({
@@ -84,13 +85,19 @@ const gpuHistoryData = {
   style: { line: 'magenta' }
 };
 
-const memoryHistoryData = {
-  title: 'Memory (MB)',
+const usedMemoryHistoryData = {
+  title: 'Free (MB)',
   x: Array(historyLength).fill('').map((_, i) => moment().subtract(historyLength - 1 - i, 'seconds').format('HH:mm:ss')),
   y: Array(historyLength).fill(0),
-  style: { line: 'yellow' }
+  style: { line: 'cyan' }
 };
 
+const freeMemoryHistoryData = {
+  title: 'Used (MB)',
+  x: Array(historyLength).fill('').map((_, i) => moment().subtract(historyLength - 1 - i, 'seconds').format('HH:mm:ss')),
+  y: Array(historyLength).fill(0),
+  style: { line: 'magenta' }
+};
 
 // --- HELPER FUNCTIONS ---
 
@@ -125,7 +132,8 @@ async function getSystemInfo() {
   try {
     const cpuInfo = await getCpuUsage();
     const totalMem = os.totalmem();
-    const freeMem = os.freemem();
+    // Use osx-extra for free memory on macOS, otherwise use os.freemem()
+    const freeMem = os.platform() === 'darwin' ? osX.freemem() : os.freemem();
     const usedMem = totalMem - freeMem;
     const usedMemInMB = Math.round(usedMem / (1024 * 1024));
     
@@ -155,7 +163,10 @@ async function getSystemInfo() {
 
     return {
       cpu: cpuInfo,
-      memory: usedMemInMB,
+      totalMemoryUsage: usedMemInMB,
+      totalMemory: Math.round(totalMem / (1024 * 1024)),
+      freeMemory: Math.round(freeMem / (1024 * 1024)),
+      usedMem: usedMemInMB,
       gpu: gpuUsagePercent
     };
   } catch (error) {
@@ -319,7 +330,8 @@ async function updateHistoryCharts() {
   try {
     const systemInfo = await getSystemInfo();
     const totalCpuUsage = systemInfo.cpu ?? 0;
-    const totalMemoryUsage = systemInfo.memory ?? 0;
+    const totalMemoryUsage = systemInfo.totalMemoryUsage ?? 0;
+    const freeMemory = systemInfo.freeMemory ?? 0;
     const totalGpuUsage = systemInfo.gpu ?? 0;
 
     const currentTime = moment().format('HH:mm:ss');
@@ -336,11 +348,17 @@ async function updateHistoryCharts() {
 
     cpuChart.setData([cpuHistoryData, gpuHistoryData]);
 
-    memoryHistoryData.y.shift();
-    memoryHistoryData.y.push(totalMemoryUsage);
-    memoryHistoryData.x.shift();
-    memoryHistoryData.x.push(currentTime);
-    memoryChart.setData([memoryHistoryData]);
+    freeMemoryHistoryData.y.shift();
+    freeMemoryHistoryData.y.push(freeMemory);
+    freeMemoryHistoryData.x.shift();
+    freeMemoryHistoryData.x.push(currentTime);
+
+    usedMemoryHistoryData.y.shift();
+    usedMemoryHistoryData.y.push(totalMemoryUsage);
+    usedMemoryHistoryData.x.shift();
+    usedMemoryHistoryData.x.push(currentTime);
+
+    memoryChart.setData([freeMemoryHistoryData, usedMemoryHistoryData]);
 
   } catch (error) {
     console.error(`Chart update err: ${error.message.split('\n')[0]}`);
