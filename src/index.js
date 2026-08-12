@@ -4,9 +4,8 @@ import blessed from 'blessed';
 import contrib from 'blessed-contrib';
 import moment from 'moment';
 import ollama from 'ollama';
-import os from 'os';
 import { exec } from 'child_process';
-import osX from 'osx-extra'; // Import osx-extra
+import { createCollector } from './collect/index.js';
 
 // Create a screen object
 const screen = blessed.screen({
@@ -49,7 +48,7 @@ const cpuChart = grid.set(7, 0, 5, 6, contrib.line, { // Increased height from 4
   xPadding: 5,
   showLegend: true,
   legend: { width: 10 },
-  label: 'CPU & GPU Usage History (%)',
+  label: 'CPU & GPU Utilization (%)',
   minY: 0,
   maxY: 100,
   border: { type: 'line', fg: 'cyan' }
@@ -86,14 +85,14 @@ const gpuHistoryData = {
 };
 
 const usedMemoryHistoryData = {
-  title: 'Free (MB)',
+  title: 'Used (MB)',
   x: Array(historyLength).fill('').map((_, i) => moment().subtract(historyLength - 1 - i, 'seconds').format('HH:mm:ss')),
   y: Array(historyLength).fill(0),
   style: { line: 'cyan' }
 };
 
 const freeMemoryHistoryData = {
-  title: 'Used (MB)',
+  title: 'Free (MB)',
   x: Array(historyLength).fill('').map((_, i) => moment().subtract(historyLength - 1 - i, 'seconds').format('HH:mm:ss')),
   y: Array(historyLength).fill(0),
   style: { line: 'magenta' }
@@ -110,68 +109,31 @@ function formatSize(bytes) {
   return `${(bytes / (1024 ** i)).toFixed(1)} ${sizes[i]}`;
 }
 
-async function getCpuUsage() {
-  const startMeasure = os.cpus().map(cpu => ({
-    idle: cpu.times.idle,
-    total: Object.values(cpu.times).reduce((acc, tv) => acc + tv, 0)
-  }));
-  await new Promise(resolve => setTimeout(resolve, 100));
-  const endMeasure = os.cpus().map(cpu => ({
-    idle: cpu.times.idle,
-    total: Object.values(cpu.times).reduce((acc, tv) => acc + tv, 0)
-  }));
-  const idleDifference = startMeasure.map((start, i) => endMeasure[i].idle - start.idle);
-  const totalDifference = startMeasure.map((start, i) => endMeasure[i].total - start.total);
-  const idlePercent = idleDifference.map((idle, i) => totalDifference[i] ? idle / totalDifference[i] : 0);
-  const avgIdlePercent = idlePercent.length > 0 ? idlePercent.reduce((sum, idle) => sum + idle, 0) / idlePercent.length : 0;
-  const cpuPercent = (1 - avgIdlePercent) * 100;
-  return parseFloat(cpuPercent.toFixed(1));
-}
+const collect = createCollector();
 
+const MB = 1024 * 1024;
+
+// GPU utilization now comes from the accelerator's own counters rather than
+// being inferred from where a model's weights happen to live.
 async function getSystemInfo() {
   try {
-    const cpuInfo = await getCpuUsage();
-    const totalMem = os.totalmem();
-    // Use osx-extra for free memory on macOS, otherwise use os.freemem()
-    const freeMem = os.platform() === 'darwin' ? osX.freemem() : os.freemem();
-    const usedMem = totalMem - freeMem;
-    const usedMemInMB = Math.round(usedMem / (1024 * 1024));
-    
-    // For GPU usage, we'll use a placeholder value that will be updated
-    // based on active models using GPU from 'ollama ps'
-    let gpuUsagePercent = 0;
-    
-    // If we have running models, check if any are using GPU
-    if (currentModelData && currentModelData.length > 0) {
-      // Find models using GPU and get their usage
-      const gpuModels = currentModelData.filter(model => 
-        model.gpu && model.gpu !== '0%' && model.gpu !== 'N/A');
-      
-      if (gpuModels.length > 0) {
-        // Extract percentage values and calculate average
-        const gpuPercentages = gpuModels.map(model => {
-          const match = model.gpu.match(/(\d+)%/);
-          return match ? parseInt(match[1], 10) : 0;
-        });
-        
-        if (gpuPercentages.length > 0) {
-          const sum = gpuPercentages.reduce((acc, val) => acc + val, 0);
-          gpuUsagePercent = sum / gpuPercentages.length;
-        }
-      }
-    }
+    const snapshot = await collect();
+    const { host, gpu } = snapshot;
 
     return {
-      cpu: cpuInfo,
-      totalMemoryUsage: usedMemInMB,
-      totalMemory: Math.round(totalMem / (1024 * 1024)),
-      freeMemory: Math.round(freeMem / (1024 * 1024)),
-      usedMem: usedMemInMB,
-      gpu: gpuUsagePercent
+      cpu: host.cpu,
+      totalMemoryUsage: Math.round(host.memUsed / MB),
+      totalMemory: Math.round(host.memTotal / MB),
+      freeMemory: Math.round(host.memFree / MB),
+      usedMem: Math.round(host.memUsed / MB),
+      gpu: gpu ? gpu.util : 0,
+      gpuName: gpu ? gpu.name : null,
+      gpuCores: gpu ? gpu.cores : null,
+      gpuMemUsed: gpu ? Math.round(gpu.allocBytes / MB) : 0
     };
   } catch (error) {
     console.error(`Sys Info Err: ${error.message}`);
-    return { cpu: 0, memory: 0, gpu: 0 };
+    return { cpu: 0, totalMemoryUsage: 0, freeMemory: 0, gpu: 0 };
   }
 }
 
