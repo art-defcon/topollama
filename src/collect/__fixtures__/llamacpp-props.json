@@ -1,0 +1,21 @@
+{
+  "total_slots": 2,
+  "model_alias": "/Users/johnpetroff/.ollama/models/blobs/sha256-7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa",
+  "model_ftype": "Q4_K - Medium",
+  "model_path": "/Users/johnpetroff/.ollama/models/blobs/sha256-7f4030143c1c477224c5434f8272c662a8b042079a0a584f0a27a1684fe2e1fa",
+  "modalities": {
+    "vision": false,
+    "video": false,
+    "audio": false
+  },
+  "media_marker": "<__media_1ynJH2rHOd2hKfobnlVHkCROS6Mfkeyb__>",
+  "endpoint_slots": true,
+  "endpoint_props": false,
+  "endpoint_metrics": true,
+  "ui": true,
+  "bos_token": "<|endoftext|>",
+  "eos_token": "<|im_end|>",
+  "build_info": "b10210-000547513",
+  "is_sleeping": false,
+  "cors_proxy_enabled": false
+}

@@ -46,7 +46,7 @@ const enginesList = grid.set(4, 0, 3, 12, contrib.table, {
   interactive: false,
   label: 'Engines',
   columnSpacing: 2,
-  columnWidth: [14, 8, 8, 30, 10, 10], // Engine, PID, Port, Model, CPU%, RAM
+  columnWidth: [14, 7, 7, 24, 9, 9, 9, 8], // Engine, PID, Port, Model, CPU%, RAM, TOK/S, SLOTS
   border: { type: 'line', fg: 'cyan' }
 });
 
@@ -193,24 +193,38 @@ function engineModelLabel(engine, snapshot) {
   return base.startsWith('sha256-') ? `blob ${base.slice(7, 19)}` : base;
 }
 
+// Ollama omits --metrics when launching its runner, so throughput is simply
+// unavailable there — shown as '-' rather than a misleading zero.
+function throughputLabel(engine) {
+  const tps = engine.telemetry?.metrics?.predictedTps;
+  return typeof tps === 'number' ? tps.toFixed(1) : '-';
+}
+
+function slotsLabel(engine) {
+  const slots = engine.telemetry?.slots;
+  return slots ? `${slots.processing}/${slots.total}` : '-';
+}
+
 function updateEnginesList(snapshot) {
   const data = snapshot.engines.map(engine => [
     engine.kind,
     String(engine.pid),
     engine.port === null ? '-' : String(engine.port),
-    engineModelLabel(engine, snapshot).substring(0, 30),
+    engineModelLabel(engine, snapshot).substring(0, 24),
     `${engine.cpu}%`,
-    formatSize(engine.rssBytes)
+    formatSize(engine.rssBytes),
+    throughputLabel(engine),
+    slotsLabel(engine)
   ]);
 
   if (data.length === 0) {
-    data.push(['(none running)', '', '', '', '', '']);
+    data.push(['(none running)', '', '', '', '', '', '', '']);
   }
 
   enginesList.setData({
-    headers: ['Engine', 'PID', 'Port', 'Model', 'CPU%', 'RAM'],
+    headers: ['Engine', 'PID', 'Port', 'Model', 'CPU%', 'RAM', 'TOK/S', 'SLOTS'],
     data: data,
-    align: ['left', 'right', 'right', 'left', 'right', 'right']
+    align: ['left', 'right', 'right', 'left', 'right', 'right', 'right', 'right']
   });
 }
 

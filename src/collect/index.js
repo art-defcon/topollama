@@ -5,6 +5,7 @@ import { readCpuSample, cpuPercentBetween, readFreeMemory } from './host.js';
 import { readOllama } from './engines/ollama.js';
 import { readProcs, cpuPercentFor } from './procs.js';
 import { classifyEngines } from './engines/discover.js';
+import { readLlamaServer } from './engines/llamacpp.js';
 
 // The on-disk model list barely changes, so it rides a slower tier than the
 // per-tick counters.
@@ -18,6 +19,9 @@ export function createCollector() {
   let lastTagsAt = 0;
   let prevProcs = null;
   let prevProcsAt = 0;
+  // /props never changes for the life of a runner, so cache it per pid and drop
+  // the entry when that pid goes away.
+  const propsByPid = new Map();
 
   return async function collect() {
     const wantTags = Date.now() - lastTagsAt >= TAGS_INTERVAL_MS;
@@ -47,6 +51,24 @@ export function createCollector() {
       }
       return { ...engine, cpu: Math.round(cpu * 10) / 10, rssBytes };
     });
+
+    // llama-cli has no HTTP surface, so only engines with a port are polled.
+    await Promise.all(
+      engines
+        .filter((engine) => engine.port !== null)
+        .map(async (engine) => {
+          const telemetry = await readLlamaServer({
+            port: engine.port,
+            props: propsByPid.get(engine.pid) ?? null
+          });
+          if (telemetry.props) propsByPid.set(engine.pid, telemetry.props);
+          engine.telemetry = telemetry;
+        })
+    );
+
+    for (const pid of propsByPid.keys()) {
+      if (!byPid.has(pid)) propsByPid.delete(pid);
+    }
 
     prevProcs = byPid;
     prevProcsAt = now;
