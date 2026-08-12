@@ -4,6 +4,8 @@ import blessed from 'blessed';
 import contrib from 'blessed-contrib';
 import moment from 'moment';
 import { createCollector } from './collect/index.js';
+import { formatSize, formatPct } from './format.js';
+import { formatHeader, headerTitle } from './header.js';
 
 // Create a screen object
 const screen = blessed.screen({
@@ -27,20 +29,29 @@ const log = blessed.log({
 });
 
 // Running Models Table
-const runningModelsList = grid.set(0, 0, 4, 12, contrib.table, {
+// Machine-wide summary: correct regardless of which engines are running,
+// because unified memory puts every allocation in the same accelerator.
+const headerBox = grid.set(0, 0, 2, 12, blessed.box, {
+  tags: true,
+  label: 'topollama',
+  padding: { left: 1 },
+  border: { type: 'line', fg: 'cyan' }
+});
+
+const runningModelsList = grid.set(2, 0, 3, 12, contrib.table, {
   keys: true,
   fg: 'white',
   selectedFg: 'white',
   selectedBg: 'blue',
   interactive: true,
-  label: 'Running Models (ollama ps)',
+  label: 'Ollama Models',
   columnSpacing: 2,
-  columnWidth: [28, 12, 10, 10, 8, 8], // Name, ID, DISK, MEM, CPU%, GPU%
+  columnWidth: [28, 12, 11, 11, 11, 8], // Model, ID, DISK, LOADED, VRAM, ON GPU
   border: { type: 'line', fg: 'cyan' }
 });
 
 // Inference engines discovered from the process table
-const enginesList = grid.set(4, 0, 3, 12, contrib.table, {
+const enginesList = grid.set(5, 0, 3, 12, contrib.table, {
   keys: false,
   fg: 'white',
   interactive: false,
@@ -51,7 +62,7 @@ const enginesList = grid.set(4, 0, 3, 12, contrib.table, {
 });
 
 // CPU & GPU History Chart
-const cpuChart = grid.set(7, 0, 5, 6, contrib.line, { // Increased height from 4 to 5
+const cpuChart = grid.set(8, 0, 4, 6, contrib.line, { // Increased height from 4 to 5
   style: { text: 'green', baseline: 'black' },
   xLabelPadding: 3,
   xPadding: 5,
@@ -64,7 +75,7 @@ const cpuChart = grid.set(7, 0, 5, 6, contrib.line, { // Increased height from 4
 });
 
 // Memory History Chart
-const memoryChart = grid.set(7, 6, 5, 6, contrib.line, { // Increased height from 4 to 5
+const memoryChart = grid.set(8, 6, 4, 6, contrib.line, { // Increased height from 4 to 5
   style: { line: 'yellow', text: 'green', baseline: 'black' },
   xLabelPadding: 3,
   xPadding: 5,
@@ -109,14 +120,6 @@ const freeMemoryHistoryData = {
 
 // --- HELPER FUNCTIONS ---
 
-function formatSize(bytes) {
-  if (bytes === null || bytes === undefined || isNaN(bytes)) return '-';
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  if (bytes === 0) return '0 B';
-  const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)), 10);
-  if (i === 0) return `${bytes} ${sizes[i]}`;
-  return `${(bytes / (1024 ** i)).toFixed(1)} ${sizes[i]}`;
-}
 
 const collect = createCollector();
 
@@ -275,17 +278,16 @@ async function updateAll() {
     updateEnginesList(snapshot);
     updateHistoryCharts(snapshot);
 
+    headerBox.setContent(formatHeader(snapshot));
+    headerBox.setLabel(headerTitle(snapshot));
+
     enginesList.setLabel(`Engines — ${snapshot.engines.length} running`);
 
     runningModelsList.setLabel(
       snapshot.ollama.up
         ? `Ollama Models — ${snapshot.ollama.loaded.length} loaded`
-        : `Ollama unreachable (${snapshot.ollama.host})`
+        : `Ollama unreachable (${snapshot.ollama.host ?? 'not polled yet'})`
     );
-
-    if (snapshot.gpu) {
-      cpuChart.setLabel(`CPU & GPU Utilization (%) — ${snapshot.gpu.name}, ${snapshot.gpu.cores} cores`);
-    }
 
     screen.render();
   } catch (error) {
@@ -310,10 +312,13 @@ screen.key(['r'], () => {
 
 console.log('topollama starting... Press q to quit, r to refresh.');
 updateAll();
-const updateInterval = setInterval(updateAll, 2000);
+// Fast tier is ~46ms of work, so a 1s tick gives the charts real resolution
+// while HTTP polls and static info ride their own slower gates in the collector.
+const updateInterval = setInterval(updateAll, 1000);
 
 screen.on('resize', () => {
   runningModelsList.emit('attach');
+  headerBox.emit('attach');
   enginesList.emit('attach');
   cpuChart.emit('attach');
   memoryChart.emit('attach');
