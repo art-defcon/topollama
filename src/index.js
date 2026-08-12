@@ -27,7 +27,7 @@ const log = blessed.log({
 });
 
 // Running Models Table
-const runningModelsList = grid.set(0, 0, 7, 12, contrib.table, {
+const runningModelsList = grid.set(0, 0, 4, 12, contrib.table, {
   keys: true,
   fg: 'white',
   selectedFg: 'white',
@@ -36,6 +36,17 @@ const runningModelsList = grid.set(0, 0, 7, 12, contrib.table, {
   label: 'Running Models (ollama ps)',
   columnSpacing: 2,
   columnWidth: [28, 12, 10, 10, 8, 8], // Name, ID, DISK, MEM, CPU%, GPU%
+  border: { type: 'line', fg: 'cyan' }
+});
+
+// Inference engines discovered from the process table
+const enginesList = grid.set(4, 0, 3, 12, contrib.table, {
+  keys: false,
+  fg: 'white',
+  interactive: false,
+  label: 'Engines',
+  columnSpacing: 2,
+  columnWidth: [14, 8, 8, 30, 10, 10], // Engine, PID, Port, Model, CPU%, RAM
   border: { type: 'line', fg: 'cyan' }
 });
 
@@ -170,6 +181,39 @@ function updateModelsList() {
   });
 }
 
+// Ollama names its runner by blob path, so show the loaded model name instead
+// when we have one; a bare sha256 blob tells the reader nothing.
+function engineModelLabel(engine, snapshot) {
+  if (engine.kind === 'ollama') {
+    const loaded = snapshot.ollama.loaded[0];
+    if (loaded) return loaded.name;
+  }
+  if (!engine.model) return '-';
+  const base = engine.model.substring(engine.model.lastIndexOf('/') + 1);
+  return base.startsWith('sha256-') ? `blob ${base.slice(7, 19)}` : base;
+}
+
+function updateEnginesList(snapshot) {
+  const data = snapshot.engines.map(engine => [
+    engine.kind,
+    String(engine.pid),
+    engine.port === null ? '-' : String(engine.port),
+    engineModelLabel(engine, snapshot).substring(0, 30),
+    `${engine.cpu}%`,
+    formatSize(engine.rssBytes)
+  ]);
+
+  if (data.length === 0) {
+    data.push(['(none running)', '', '', '', '', '']);
+  }
+
+  enginesList.setData({
+    headers: ['Engine', 'PID', 'Port', 'Model', 'CPU%', 'RAM'],
+    data: data,
+    align: ['left', 'right', 'right', 'left', 'right', 'right']
+  });
+}
+
 function updateHistoryCharts(snapshot) {
   try {
     const totalCpuUsage = snapshot.host.cpu ?? 0;
@@ -214,7 +258,10 @@ async function updateAll() {
     const snapshot = await collect();
     currentModelData = buildModelRows(snapshot);
     updateModelsList();
+    updateEnginesList(snapshot);
     updateHistoryCharts(snapshot);
+
+    enginesList.setLabel(`Engines — ${snapshot.engines.length} running`);
 
     runningModelsList.setLabel(
       snapshot.ollama.up
@@ -253,6 +300,7 @@ const updateInterval = setInterval(updateAll, 2000);
 
 screen.on('resize', () => {
   runningModelsList.emit('attach');
+  enginesList.emit('attach');
   cpuChart.emit('attach');
   memoryChart.emit('attach');
   screen.render();
