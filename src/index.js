@@ -3,8 +3,6 @@
 import blessed from 'blessed';
 import contrib from 'blessed-contrib';
 import moment from 'moment';
-import ollama from 'ollama';
-import { exec } from 'child_process';
 import { createCollector } from './collect/index.js';
 
 // Create a screen object
@@ -113,188 +111,71 @@ const collect = createCollector();
 
 const MB = 1024 * 1024;
 
-// GPU utilization now comes from the accelerator's own counters rather than
-// being inferred from where a model's weights happen to live.
-async function getSystemInfo() {
-  try {
-    const snapshot = await collect();
-    const { host, gpu } = snapshot;
+// Everything the UI needs arrives in one snapshot per tick. Nothing below this
+// point spawns a process or makes a request.
+function buildModelRows(snapshot) {
+  const loadedByName = new Map(snapshot.ollama.loaded.map((m) => [m.name, m]));
 
+  // Show every model on disk, with live figures for the ones actually loaded.
+  const rows = snapshot.ollama.disk.map((model) => {
+    const live = loadedByName.get(model.name);
+    loadedByName.delete(model.name);
     return {
-      cpu: host.cpu,
-      totalMemoryUsage: Math.round(host.memUsed / MB),
-      totalMemory: Math.round(host.memTotal / MB),
-      freeMemory: Math.round(host.memFree / MB),
-      usedMem: Math.round(host.memUsed / MB),
-      gpu: gpu ? gpu.util : 0,
-      gpuName: gpu ? gpu.name : null,
-      gpuCores: gpu ? gpu.cores : null,
-      gpuMemUsed: gpu ? Math.round(gpu.allocBytes / MB) : 0
+      name: model.name.substring(0, 28),
+      id: model.id,
+      disk: formatSize(model.diskBytes),
+      loaded: live ? formatSize(live.sizeBytes) : '-',
+      vram: live ? formatSize(live.vramBytes) : '-',
+      onGpu: live && live.gpuPct !== null ? `${live.gpuPct}%` : '-'
     };
-  } catch (error) {
-    console.error(`Sys Info Err: ${error.message}`);
-    return { cpu: 0, totalMemoryUsage: 0, freeMemory: 0, gpu: 0 };
-  }
-}
-
-// Get running model info from 'ollama ps' - FIXED FOR EXACT FORMAT
-async function getOllamaPsInfo() {
-  return new Promise((resolve) => {
-    exec('ollama ps', { timeout: 4000 }, (error, stdout, stderr) => {
-      const modelData = {};
-      
-      // Handle errors
-      if (error) {
-        if (stderr && stderr.toLowerCase().includes("could not connect")) {
-          console.error("Ollama server not running?");
-        } else if (stderr && (stderr.toLowerCase().includes("no models running") || stdout.trim() === '')) {
-          console.error("No models currently running.");
-        } else if (error.signal === 'SIGTERM' || error.code === null) {
-          console.error("'ollama ps' timed out.");
-        } else {
-          console.error(`ollama ps err: ${error.message.split('\n')[0]}`);
-        }
-        resolve(modelData);
-        return;
-      }
-      
-      // Parse output
-      const lines = stdout.trim().split('\n');
-      if (lines.length < 2) {
-        resolve(modelData);
-        return;
-      }
-      
-      // Check for exact header format: NAME ID SIZE PROCESSOR UNTIL
-      const headerLine = lines[0];
-      if (!headerLine.includes('NAME') || !headerLine.includes('ID') || 
-          !headerLine.includes('SIZE') || !headerLine.includes('PROCESSOR') || 
-          !headerLine.includes('UNTIL')) {
-        console.error(`Unexpected 'ollama ps' header format: "${headerLine}"`);
-        resolve(modelData);
-        return;
-      }
-      
-      // Find column positions
-      const namePos = headerLine.indexOf('NAME');
-      const idPos = headerLine.indexOf('ID');
-      const sizePos = headerLine.indexOf('SIZE');
-      const processorPos = headerLine.indexOf('PROCESSOR');
-      const untilPos = headerLine.indexOf('UNTIL');
-      
-      // Process data rows
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i];
-        if (!line.trim()) continue;
-        
-        try {
-          // Extract fields based on column positions
-          const name = line.substring(namePos, idPos).trim();
-          const size = line.substring(sizePos, processorPos).trim();
-          const processor = line.substring(processorPos, untilPos).trim();
-          
-          // Parse processor info to get CPU/GPU usage
-          let cpuUsage = '0%';
-          let gpuUsage = '0%';
-          
-          if (processor.includes('GPU')) {
-            // Extract GPU percentage if available
-            const gpuMatch = processor.match(/(\d+)%\s*GPU/);
-            gpuUsage = gpuMatch ? `${gpuMatch[1]}%` : '100%'; // Default to 100% if no percentage
-          } else if (processor.includes('CPU')) {
-            // Extract CPU percentage if available
-            const cpuMatch = processor.match(/(\d+)%\s*CPU/);
-            cpuUsage = cpuMatch ? `${cpuMatch[1]}%` : '100%'; // Default to 100% if no percentage
-          }
-          
-          if (name) {
-            modelData[name] = {
-              committedMem: size, // Store committed memory
-              cpu: cpuUsage,
-              gpu: gpuUsage
-            };
-          }
-        } catch (parseError) {
-          console.error(`Error parsing line ${i}: ${parseError.message}`);
-        }
-      }
-      
-      resolve(modelData);
-    });
   });
-}
 
-// Get combined list of models and their status/usage
-async function getRunningModels() {
-  try {
-    const [listResponse, psInfo] = await Promise.all([
-      ollama.list().catch(err => {
-        console.error(`ollama list err: ${err.message.split('\n')[0]}`);
-        if (err.message.toLowerCase().includes('connection refused')) {
-          console.error("Is the Ollama server running?");
-        }
-        return { models: [] };
-      }),
-      getOllamaPsInfo()
-    ]);
-
-    if (!listResponse || !Array.isArray(listResponse.models)) {
-      console.error("Could not retrieve model list from Ollama API.");
-      return [];
-    }
-
-    return listResponse.models.map(model => {
-      const runningData = psInfo[model.name];
-
-      return {
-        name: model.name.substring(0, 28),
-        id: model.digest.substring(0, 12),
-        diskSize: formatSize(model.size), // Model size on disk from ollama list
-        // If running, use committed memory from ollama ps as MEM, otherwise 0 B
-        usedMem: runningData ? runningData.committedMem : '0 B',
-        cpu: runningData ? runningData.cpu : '0%',
-        gpu: runningData ? runningData.gpu : '0%',
-        isRunning: !!runningData
-      };
+  // A model can be loaded without appearing on disk (e.g. pulled by digest).
+  for (const live of loadedByName.values()) {
+    rows.push({
+      name: live.name.substring(0, 28),
+      id: live.id,
+      disk: '-',
+      loaded: formatSize(live.sizeBytes),
+      vram: formatSize(live.vramBytes),
+      onGpu: live.gpuPct !== null ? `${live.gpuPct}%` : '-'
     });
-  } catch (error) {
-    console.error(`Get models err: ${error.message.split('\n')[0]}`);
-    return [];
   }
-}
 
+  return rows;
+}
 
 // --- UPDATE FUNCTIONS ---
 
 function updateModelsList() {
-  const models = currentModelData;
-  const data = models.map(model => [
+  const data = currentModelData.map(model => [
     model.name,
     model.id,
-    model.diskSize, // Disk Size from ollama list (renamed from size to diskSize)
-    model.usedMem,  // Committed Memory from ollama ps
-    model.cpu,
-    model.gpu
+    model.disk,
+    model.loaded,
+    model.vram,
+    model.onGpu
   ]);
 
   if (data.length === 0) {
-    data.push(['(No models available or running)', '', '', '', '', '']);
+    data.push(['(no models)', '', '', '', '', '']);
   }
 
+  // LOADED and VRAM are byte counts from /api/ps; ON GPU is the share of the
+  // weights resident in VRAM — placement, not utilization.
   runningModelsList.setData({
-    headers: ['Model', 'ID', 'DISK', 'MEM', 'CPU%', 'GPU%'], // Changed SIZE to DISK
+    headers: ['Model', 'ID', 'DISK', 'LOADED', 'VRAM', 'ON GPU'],
     data: data,
     align: ['left', 'left', 'right', 'right', 'right', 'right']
   });
 }
 
-async function updateHistoryCharts() {
+function updateHistoryCharts(snapshot) {
   try {
-    const systemInfo = await getSystemInfo();
-    const totalCpuUsage = systemInfo.cpu ?? 0;
-    const totalMemoryUsage = systemInfo.totalMemoryUsage ?? 0;
-    const freeMemory = systemInfo.freeMemory ?? 0;
-    const totalGpuUsage = systemInfo.gpu ?? 0;
+    const totalCpuUsage = snapshot.host.cpu ?? 0;
+    const totalMemoryUsage = Math.round(snapshot.host.memUsed / MB);
+    const freeMemory = Math.round(snapshot.host.memFree / MB);
+    const totalGpuUsage = snapshot.gpu ? snapshot.gpu.util : 0;
 
     const currentTime = moment().format('HH:mm:ss');
 
@@ -327,14 +208,24 @@ async function updateHistoryCharts() {
   }
 }
 
-// Update all components
+// One collect() per tick feeds every widget.
 async function updateAll() {
   try {
-    currentModelData = await getRunningModels();
-    await Promise.all([
-      updateHistoryCharts(),
-      Promise.resolve().then(updateModelsList)
-    ]);
+    const snapshot = await collect();
+    currentModelData = buildModelRows(snapshot);
+    updateModelsList();
+    updateHistoryCharts(snapshot);
+
+    runningModelsList.setLabel(
+      snapshot.ollama.up
+        ? `Ollama Models — ${snapshot.ollama.loaded.length} loaded`
+        : `Ollama unreachable (${snapshot.ollama.host})`
+    );
+
+    if (snapshot.gpu) {
+      cpuChart.setLabel(`CPU & GPU Utilization (%) — ${snapshot.gpu.name}, ${snapshot.gpu.cores} cores`);
+    }
+
     screen.render();
   } catch (error) {
     console.error(`UpdateAll Err: ${error.message.split('\n')[0]}`);

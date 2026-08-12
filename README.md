@@ -57,7 +57,8 @@ npm start
 - **blessed**: For creating the terminal-based UI. ([source](https://github.com/chjj/blessed))
 - **blessed-contrib**: For adding interactive components like tables and charts. ([source](https://github.com/Yomguithereal/blessed-contrib))
 - **moment**: For handling date and time formatting. ([source](https://github.com/moment/moment))
-- **ollama-js**: Official JavaScript client for Ollama. ([source](https://github.com/ollama/ollama-js))
+
+Ollama is read directly over its HTTP API, and GPU telemetry comes from the macOS IORegistry — neither needs a client library.
 
 ## How It Works
 
